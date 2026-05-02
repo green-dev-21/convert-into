@@ -1,7 +1,7 @@
 import sharp from "sharp";
 import mammoth from "mammoth";
 import { jsPDF } from "jspdf";
-// @ts-ignore
+// @ts-expect-error - pdf-parse does not have official types
 import pdf from "pdf-parse/lib/pdf-parse.js";
 import { Document, Packer, Paragraph, TextRun } from "docx";
 
@@ -18,12 +18,36 @@ export async function convertImage(buffer: Buffer, targetFormat: "jpeg" | "png" 
 }
 
 export async function convertDocxToPdf(buffer: Buffer): Promise<Buffer> {
+  // Extract text with simple formatting
   const result = await mammoth.extractRawText({ buffer });
   const text = result.value;
 
-  const doc = new jsPDF();
-  const splitText = doc.splitTextToSize(text, 180);
-  doc.text(splitText, 10, 10);
+  const doc = new jsPDF({
+    orientation: "p",
+    unit: "mm",
+    format: "a4"
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 20;
+  const maxLineWidth = pageWidth - (margin * 2);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+
+  const lines = doc.splitTextToSize(text, maxLineWidth);
+  const lineHeight = 6; // Adjusted for 11pt font
+  let cursorY = margin;
+
+  for (let i = 0; i < lines.length; i++) {
+    if (cursorY + lineHeight > pageHeight - margin) {
+      doc.addPage();
+      cursorY = margin;
+    }
+    doc.text(lines[i], margin, cursorY);
+    cursorY += lineHeight;
+  }
 
   return Buffer.from(doc.output("arraybuffer"));
 }
@@ -34,14 +58,20 @@ export async function convertPdfToText(buffer: Buffer): Promise<string> {
 }
 
 export async function convertPdfToDocx(buffer: Buffer): Promise<Buffer> {
-  const text = await convertPdfToText(buffer);
-  const lines = text.split("\n");
+  const data = await pdf(buffer);
+  const text = data.text;
+
+  // Try to preserve some basic structure by splitting by newlines and filtering empty lines
+  const lines = text.split("\n").map((line: string) => line.trim());
 
   const doc = new Document({
     sections: [{
       properties: {},
-      children: lines.map(line => new Paragraph({
+      children: lines.map((line: string) => new Paragraph({
         children: [new TextRun(line)],
+        spacing: {
+          after: 200,
+        },
       })),
     }],
   });
