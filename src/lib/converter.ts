@@ -1,7 +1,7 @@
 import sharp from "sharp";
 import mammoth from "mammoth";
 import { jsPDF } from "jspdf";
-// @ts-ignore
+// @ts-expect-error - pdf-parse does not have official types
 import pdf from "pdf-parse/lib/pdf-parse.js";
 import { Document, Packer, Paragraph, TextRun } from "docx";
 
@@ -23,7 +23,20 @@ export async function convertDocxToPdf(buffer: Buffer): Promise<Buffer> {
 
   const doc = new jsPDF();
   const splitText = doc.splitTextToSize(text, 180);
-  doc.text(splitText, 10, 10);
+
+  const pageHeight = doc.internal.pageSize.height;
+  let cursorY = 10;
+  const margin = 10;
+  const lineHeight = 10;
+
+  for (let i = 0; i < splitText.length; i++) {
+    if (cursorY + lineHeight > pageHeight - margin) {
+      doc.addPage();
+      cursorY = margin;
+    }
+    doc.text(splitText[i], margin, cursorY);
+    cursorY += lineHeight;
+  }
 
   return Buffer.from(doc.output("arraybuffer"));
 }
