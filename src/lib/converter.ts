@@ -18,23 +18,34 @@ export async function convertImage(buffer: Buffer, targetFormat: "jpeg" | "png" 
 }
 
 export async function convertDocxToPdf(buffer: Buffer): Promise<Buffer> {
+  // Extract text with simple formatting
   const result = await mammoth.extractRawText({ buffer });
   const text = result.value;
 
-  const doc = new jsPDF();
-  const splitText = doc.splitTextToSize(text, 180);
+  const doc = new jsPDF({
+    orientation: "p",
+    unit: "mm",
+    format: "a4"
+  });
 
-  const pageHeight = doc.internal.pageSize.height;
-  let cursorY = 10;
-  const margin = 10;
-  const lineHeight = 10;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 20;
+  const maxLineWidth = pageWidth - (margin * 2);
 
-  for (let i = 0; i < splitText.length; i++) {
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+
+  const lines = doc.splitTextToSize(text, maxLineWidth);
+  const lineHeight = 6; // Adjusted for 11pt font
+  let cursorY = margin;
+
+  for (let i = 0; i < lines.length; i++) {
     if (cursorY + lineHeight > pageHeight - margin) {
       doc.addPage();
       cursorY = margin;
     }
-    doc.text(splitText[i], margin, cursorY);
+    doc.text(lines[i], margin, cursorY);
     cursorY += lineHeight;
   }
 
@@ -47,14 +58,20 @@ export async function convertPdfToText(buffer: Buffer): Promise<string> {
 }
 
 export async function convertPdfToDocx(buffer: Buffer): Promise<Buffer> {
-  const text = await convertPdfToText(buffer);
-  const lines = text.split("\n");
+  const data = await pdf(buffer);
+  const text = data.text;
+
+  // Try to preserve some basic structure by splitting by newlines and filtering empty lines
+  const lines = text.split("\n").map((line: string) => line.trim());
 
   const doc = new Document({
     sections: [{
       properties: {},
-      children: lines.map(line => new Paragraph({
+      children: lines.map((line: string) => new Paragraph({
         children: [new TextRun(line)],
+        spacing: {
+          after: 200,
+        },
       })),
     }],
   });
